@@ -1,95 +1,82 @@
+import os
+import time
 import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-print("⏳ Создаем файл со всеми таблицами...")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INCOMING_FOLDER = os.path.join(BASE_DIR, "Incoming_Data")
+PROCESSED_FOLDER = os.path.join(BASE_DIR, "Processed_Data")
+CREDENTIALS_FILE = os.path.join(BASE_DIR, "credentials.json")
 
-data_20_21 = [
-    [1, 'ФК "Екатеринодар" 220 20/21', 6, 6, 0, 0, '37 - 14', 18],
-    [2, 'ФК "Звезда" 20/21', 6, 5, 0, 1, '56 - 12', 15],
-    [3, 'ФК "Екатеринодар" 108/111 20/21', 6, 5, 0, 1, '57 - 18', 15],
-    [4, 'ФК "Екатеринодар" 103Ф 20/21', 6, 4, 0, 2, '49 - 31', 12],
-    [5, 'ФК "Екатеринодар" 127/117 20/21', 6, 3, 0, 3, '40 - 32', 9],
-    [6, 'ФК "Екатеринодар" 188/50 20/21', 6, 3, 0, 3, '19 - 42', 9],
-    [7, 'ФК "Екатеринодар" 61 20/21', 6, 1, 1, 4, '21 - 41', 4],
-    [8, 'ФК "Екатеринодар" 65 20/21', 6, 1, 1, 4, '22 - 47', 4],
-    [9, 'ФК "Екатеринодар" 49/191 20/21', 6, 1, 0, 5, '11 - 45', 3],
-    [10, 'ФК "Екатеринодар" 51/189 20/21', 6, 0, 0, 6, '12 - 42', 0]
-]
+os.makedirs(INCOMING_FOLDER, exist_ok=True)
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
-data_liga_a_16_17 = [
-    [1, 'ФК "Екатеринодар" 46 16/17', 6, 5, 0, 1, '36 - 12', 15],
-    [2, 'ФК "Екатеринодар" 78/93 16/17', 5, 4, 0, 1, '22 - 13', 12],
-    [3, 'ФК "Екатеринодар" 109 16/17', 4, 3, 0, 1, '23 - 11', 9],
-    [4, 'ФК "Екатеринодар" 105/18 16/17', 5, 3, 0, 2, '51 - 21', 9],
-    [5, 'ФК "Екатеринодар" 99 16/17', 5, 1, 0, 4, '12 - 28', 3],
-    [6, 'ФК "Екатеринодар" 111 16/17', 5, 1, 0, 4, '14 - 46', 3],
-    [7, 'ФК "Екатеринодар" 61 16/17', 4, 0, 0, 4, '17 - 44', 0]
-]
+GOOGLE_SHEET_NAME = "Krasnodar Kids Liga Master"
 
-data_liga_a_17_18 = [
-    [1, 'ФК "Екатеринодар" 7Ф 17/18', 5, 4, 1, 0, '35 - 6', 13],
-    [2, 'ФК "Екатеринодар" 115 17/18', 5, 4, 0, 1, '36 - 16', 12],
-    [3, 'ФК "Екатеринодар" 66 17/18', 5, 4, 0, 1, '30 - 15', 12],
-    [4, 'ФК "Екатеринодар" 112 17/18', 5, 4, 0, 1, '22 - 12', 12],
-    [5, 'ФК "Звезда" 17/18', 6, 3, 0, 3, '28 - 24', 9],
-    [6, 'ФК "Екатеринодар" 78/93 17/18', 5, 1, 1, 3, '17 - 23', 4],
-    [7, 'ФК "Лидер-ЮГ" 17/18', 5, 0, 0, 5, '6 - 37', 0],
-    [8, 'ФК "Екатеринодар" 103Ф 17/18', 6, 0, 0, 6, '11 - 52', 0]
-]
+def sync_to_google_sheets(dataframe, sheet_name):
+    """Синхронизация с Google Таблицей"""
+    try:
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+        client = gspread.authorize(creds)
 
-data_liga_a_18_19 = [
-    [1, 'ФК "Звезда" 18/19', 5, 4, 1, 0, '19 - 11', 13],
-    [2, 'ФК "Екатеринодар" 109 18/19', 4, 4, 0, 0, '26 - 7', 12],
-    [3, 'ФК "Екатеринодар" 7Ф 18/19', 4, 3, 1, 0, '30 - 8', 10],
-    [4, 'ФК "Екатеринодар" 117/87 18/19', 6, 2, 0, 4, '25 - 27', 6],
-    [5, 'ФК "Екатеринодар" 61 18/19', 5, 2, 0, 3, '22 - 17', 6],
-    [6, 'ФК "Екатеринодар" 66 18/19', 5, 2, 0, 3, '16 - 25', 6],
-    [7, 'ФК "Екатеринодар" 18Ф 18/19', 4, 1, 0, 3, '12 - 17', 3],
-    [8, 'ФК "Лига Про Макс" 18/19', 5, 0, 0, 5, '6 - 44', 0]
-]
+        spreadsheet = client.open(GOOGLE_SHEET_NAME)
 
-data_liga_b_16_17 = [
-    [1, 'ФК "Екатеринодар" 94Ф 16/17', 6, 6, 0, 0, '52 - 20', 18],
-    [2, 'ФК "Екатеринодар" 117/87 16/17', 6, 4, 1, 1, '19 - 15', 13],
-    [3, 'ФК "Екатеринодар" 103 16/17', 4, 2, 0, 2, '18 - 17', 6],
-    [4, 'ФК "Екатеринодар" 46 (2) 16/17', 5, 2, 0, 3, '15 - 21', 6],
-    [5, 'ФК "Екатеринодар" 38/31 16/17', 4, 1, 1, 2, '9 - 19', 4],
-    [6, 'ФК "Лига Про Макс" 16/17', 5, 1, 0, 4, '17 - 26', 3],
-    [7, 'ФК "Екатеринодар" 104 16/17', 4, 0, 0, 4, '14 - 26', 0]
-]
+        try:
+            worksheet = spreadsheet.worksheet(sheet_name)
+            worksheet.clear()
+        except gspread.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
 
-data_liga_b_17_18 = [
-    [1, 'ФК "Екатеринодар" 112/107 17/18', 5, 5, 0, 0, '38 - 6', 15],
-    [2, 'ФК "Екатеринодар" 102Ф 17/18', 4, 4, 0, 0, '28 - 6', 12],
-    [3, 'ФК "Екатеринодар" 99 17/18', 4, 3, 0, 1, '19 - 19', 9],
-    [4, 'ФК "Империал" 17/18', 6, 3, 0, 3, '21 - 27', 9],
-    [5, 'ФК "Екатеринодар" 38/31 17/18', 5, 2, 0, 3, '25 - 18', 6],
-    [6, 'ФК "Екатеринодар" 37/7 17/18', 6, 2, 0, 4, '28 - 25', 6],
-    [7, 'ФК "Екатеринодар" 48/23 17/18', 5, 1, 0, 4, '8 - 38', 3],
-    [8, 'ФК "Екатеринодар" 103 17/18', 5, 0, 0, 5, '6 - 34', 0]
-]
+        # Подготовка данных и очистка от NaN (чтобы не было ошибок пустых ячеек)
+        data_to_write = [dataframe.columns.tolist()] + dataframe.values.tolist()
+        data_to_write = [[("" if pd.isna(val) else val) for val in row] for row in data_to_write]
 
-data_liga_b_18_19 = [
-    [1, 'ФК "Екатеринодар" 102 18/19', 5, 5, 0, 0, '55 - 4', 15],
-    [2, 'ФК "Екатеринодар" 105/18 18/19', 5, 4, 0, 1, '23 - 23', 12],
-    [3, 'ФК "Екатеринодар" 65 18/19', 5, 4, 0, 1, '36 - 15', 12],
-    [4, 'ФК "Екатеринодар" 46 18/19', 5, 3, 0, 2, '34 - 18', 9],
-    [5, 'ФК "Екатеринодар" 61 (2) 18/19', 5, 2, 0, 3, '27 - 27', 6],
-    [6, 'ФК "Екатеринодар" 78/93 18/19', 4, 2, 0, 2, '31 - 15', 6],
-    [7, 'ФК "Екатеринодар" 99 18/19', 5, 1, 0, 4, '16 - 35', 3],
-    [8, 'ФК "Екатеринодар" 44/104 18/19', 5, 1, 0, 4, '14 - 61', 3],
-    [9, 'ФК "Екатеринодар" 108/111 18/19', 5, 0, 0, 5, '9 - 47', 0]
-]
+        # Передаем данные напрямую без привязки к фиксированному диапазону
+        worksheet.update(data_to_write)
+        print(f"   ☁️ Успешно выгружено в Google Таблицу (лист: {sheet_name})!")
 
-columns = ['Место', 'Команда', 'И', 'В', 'Н', 'П', 'МЗ-МП', 'Очки']
-file_name = 'Krasnodar_Kids_Liga_All_Tables.xlsx'
+    except Exception as e:
+        print(f"   ❌ Ошибка при выгрузке в Google Таблицу: {e}")
 
-with pd.ExcelWriter(file_name, engine='openpyxl') as writer:
-    pd.DataFrame(data_20_21, columns=columns).to_excel(writer, sheet_name='20-21', index=False)
-    pd.DataFrame(data_liga_a_16_17, columns=columns).to_excel(writer, sheet_name='Лига А 16-17', index=False)
-    pd.DataFrame(data_liga_a_17_18, columns=columns).to_excel(writer, sheet_name='Лига А 17-18', index=False)
-    pd.DataFrame(data_liga_a_18_19, columns=columns).to_excel(writer, sheet_name='Лига А 18-19', index=False)
-    pd.DataFrame(data_liga_b_16_17, columns=columns).to_excel(writer, sheet_name='Лига Б 16-17', index=False)
-    pd.DataFrame(data_liga_b_17_18, columns=columns).to_excel(writer, sheet_name='Лига Б 17-18', index=False)
-    pd.DataFrame(data_liga_b_18_19, columns=columns).to_excel(writer, sheet_name='Лига Б 18-19', index=False)
+def process_files():
+    files = [f for f in os.listdir(INCOMING_FOLDER) if f.endswith(('.xlsx', '.xls', '.csv'))]
+    
+    if not files:
+        print("⏳ Ожидание файлов в папке Incoming_Data...")
+        return
 
-print(f"✅ УСПЕХ! Файл '{file_name}' только что создан прямо в папке проекта!")
+    print(f"⚡ Найдено новых файлов: {len(files)}. Начинаю обработку и синхронизацию...")
+
+    for filename in files:
+        file_path = os.path.join(INCOMING_FOLDER, filename)
+        print(f"   🔄 Обработка файла: {filename}...")
+        
+        try:
+            # Безопасное чтение файла с автоматическим закрытием дескриптора (защита от WinError 32)
+            if filename.endswith('.csv'):
+                df_dict = {"Sheet1": pd.read_csv(file_path)}
+            else:
+                with pd.ExcelFile(file_path) as excel:
+                    df_dict = {sheet: pd.read_excel(excel, sheet_name=sheet) for sheet in excel.sheet_names}
+
+            for sheet, df in df_dict.items():
+                cloud_sheet_title = f"{filename[:10]}_{sheet}"[:30]
+                sync_to_google_sheets(df, cloud_sheet_title)
+
+            # Небольшая пауза и безопасное перемещение в архив
+            processed_path = os.path.join(PROCESSED_FOLDER, filename)
+            if os.path.exists(processed_path):
+                os.remove(processed_path)
+            
+            time.sleep(0.5)
+            os.rename(file_path, processed_path)
+            print(f"   ✅ Файл {filename} успешно обработан и перемещен в архив.")
+
+        except Exception as e:
+            print(f"   ❌ Ошибка с файлом {filename}: {e}")
+
+if __name__ == "__main__":
+    print("🚀 Бот-автоматизатор запущен и подключен к облаку Google Sheets!")
+    process_files()
