@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 import io
 import time
@@ -10,6 +10,9 @@ from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
+
+VK_TOKEN = (os.getenv("VK_TOKEN") or os.getenv("VK_SERVICE_TOKEN") or "").strip()
+VK_API_VER = "5.199"
 
 HEADERS = {
     "User-Agent": (
@@ -27,7 +30,6 @@ RESULT_KEYWORDS = (
 
 
 def _compress_image_for_vision(img_bytes, max_side=1600):
-    """Уменьшает вес картинки перед отправкой в API, чтобы избежать 504 и ReadTimeout."""
     try:
         img = Image.open(io.BytesIO(img_bytes))
         if img.mode in ("RGBA", "P"):
@@ -44,7 +46,6 @@ def _compress_image_for_vision(img_bytes, max_side=1600):
 
 
 def extract_matches_from_image_bytes(img_bytes, league_hint="Турнир"):
-    """Распознаёт сыгранные матчи со счётом с карточки-изображения через Gemini Vision."""
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise ValueError("Не найден GEMINI_API_KEY в файле .env")
@@ -105,17 +106,15 @@ def extract_matches_from_image_bytes(img_bytes, league_hint="Турнир"):
 
 
 def extract_matches_from_text(text, league_name="Турнир"):
-    """Извлекает матчи со счётом из обычного текста поста."""
     matches = []
     if not text:
         return matches
 
     for raw_line in text.splitlines():
-        line = re.sub(r"^[⚽🏆📅🔹▪️•\-*\d.)\s]+", "", raw_line).strip()
+        line = re.sub(r"^[⚽🏆📅🔹▪•\-*\d.)\s]+", "", raw_line).strip()
         if len(line) < 7 or len(line) > 130:
             continue
 
-        # Вариант 1: "Команда А - Команда Б 3:1" или "Команда А — Команда Б (3:1)"
         m = re.match(
             r"^([А-ЯЁA-Z0-9«»\"'\s.\-()]{2,45}?)\s+[-–—vsVS]+\s+([А-ЯЁA-Z0-9«»\"'\s.\-()]{2,45}?)\s*[\(\[]?\s*(\d{1,2})\s*[:\-]\s*(\d{1,2})\s*[\)\]]?$",
             line
@@ -132,7 +131,6 @@ def extract_matches_from_text(text, league_name="Турнир"):
                 })
                 continue
 
-        # Вариант 2: "Команда А 3:1 Команда Б"
         m2 = re.match(
             r"^([А-ЯЁA-Z0-9«»\"'\s.\-()]{2,45}?)\s+(\d{1,2})\s*[:\-]\s*(\d{1,2})\s+([А-ЯЁA-Z0-9«»\"'\s.\-()]{2,45})$",
             line
@@ -151,49 +149,94 @@ def extract_matches_from_text(text, league_name="Турнир"):
     return matches
 
 
-def _normalize_vk_mobile_url(url):
+def _normalize_vk_url(url):
     u = url.strip()
     if not u.startswith("http"):
         u = "https://" + u
-    u = u.replace("vk.com/", "m.vk.com/").replace("vk.ru/", "m.vk.com/")
-    return u
+    return u.replace("vk.ru/", "vk.com/")
 
 
-def _extract_vk_post_images(post_tag):
-    """Достаёт прямые ссылки на прикреплённые изображения из поста m.vk.com."""
+def _extract_vk_api_photos(post_obj):
     urls = []
-    for el in post_tag.find_all(["a", "div", "img"]):
-        for attr in ("data-src_big", "data-src", "src", "style"):
-            val = el.get(attr)
-            if not val:
-                continue
-            found = re.findall(r"https?://[^\s\"'()]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\s\"'()]*)?", str(val), flags=re.IGNORECASE)
-            for f_url in found:
-                clean_u = f_url.split("|")[0].replace("&amp;", "&")
-                if any(skip in clean_u for skip in ("emoji", "sticker", "camera_", "deactivated", "icon")):
-                    continue
-                if clean_u not in urls:
-                    urls.append(clean_u)
+    for att in post_obj.get("attachments", []):
+        if att.get("type") == "photo":
+            sizes = att.get("photo", {}).get("sizes", [])
+            if sizes:
+                best = max(sizes, key=lambda s: s.get("width", 0) * s.get("height", 0))
+                if best.get("url"):
+                    urls.append(best["url"])
     return urls
 
 
+def _fetch_vk_posts_via_api(url, count=15):
+    clean_url = _normalize_vk_url(url)
+    group_title = None
+    target_post_id = None
+
+    params = {"count": count, "filter": "owner", "access_token": VK_TOKEN, "v": VK_API_VER}
+
+    # Если передана ссылка на конкретный пост (wall-227039869_3002), берём owner_id из неё и читаем стену через wall.get
+    wall_match = re.search(r"wall(-?\d+)_(\d+)", clean_url)
+    if wall_match:
+        params["owner_id"] = int(wall_match.group(1))
+        target_post_id = int(wall_match.group(2))
+        params["count"] = 50
+    else:
+        slug_match = re.search(r"vk\.com/([^/?#]+)", clean_url)
+        if not slug_match:
+            return [], None
+        slug = slug_match.group(1)
+        if slug.startswith("club") or slug.startswith("public"):
+            num = re.sub(r"\D", "", slug)
+            params["owner_id"] = -int(num)
+        else:
+            params["domain"] = slug
+
+    resp = requests.get("https://api.vk.com/method/wall.get", params=params, timeout=15).json()
+    if "error" in resp:
+        raise RuntimeError(f"VK API Error: {resp['error'].get('error_msg')}")
+
+    items = resp.get("response", {}).get("items", [])
+
+    if target_post_id is not None:
+        matched = [p for p in items if p.get("id") == target_post_id]
+        if matched:
+            items = matched
+
+    if items and items[0].get("owner_id", 0) < 0:
+        gid = abs(items[0]["owner_id"])
+        g_resp = requests.get(
+            "https://api.vk.com/method/groups.getById",
+            params={"group_id": gid, "access_token": VK_TOKEN, "v": VK_API_VER},
+            timeout=10
+        ).json()
+        g_data = g_resp.get("response", {})
+        groups = g_data.get("groups", []) if isinstance(g_data, dict) else g_data
+        if groups:
+            group_title = groups[0].get("name")
+
+    parsed_posts = []
+    for p in items:
+        parsed_posts.append({
+            "text": p.get("text", ""),
+            "images": _extract_vk_api_photos(p)
+        })
+    return parsed_posts, group_title
+
+
 def parse_vk_group(url, league_name=None, count=15, scan_photos=True):
-    """Сканирует стену группы ВК (тексты постов + прикреплённые карточки результатов)."""
-    mobile_url = _normalize_vk_mobile_url(url)
-    resp = requests.get(mobile_url, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
+    if not VK_TOKEN:
+        raise ValueError("Не задан VK_TOKEN в файле .env")
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    page_title = soup.title.get_text(strip=True) if soup.title else "Лига ВК"
-    default_league = league_name or re.sub(r"\s*\|.*$", "", page_title).strip() or "Лига ВК"
+    posts, detected_title = _fetch_vk_posts_via_api(url, count=count)
+    default_league = league_name or detected_title or "Лига ВК"
 
-    posts = soup.find_all("div", class_=re.compile(r"wall_item|wi_body"))
     all_matches = []
     seen_keys = set()
 
-    for idx, post in enumerate(posts[:count], start=1):
-        text_el = post.find("div", class_=re.compile(r"pi_text|wi_explain"))
-        post_text = text_el.get_text("\n", strip=True) if text_el else post.get_text("\n", strip=True)
+    for idx, post in enumerate(posts, start=1):
+        post_text = post.get("text", "")
+        img_urls = post.get("images", [])
 
         text_matches = extract_matches_from_text(post_text, league_name=default_league)
         for m in text_matches:
@@ -202,13 +245,17 @@ def parse_vk_group(url, league_name=None, count=15, scan_photos=True):
                 seen_keys.add(key)
                 all_matches.append(m)
 
-        if scan_photos:
-            img_urls = _extract_vk_post_images(post)
+        if scan_photos and img_urls:
             low_text = post_text.lower()
-            looks_like_results = any(kw in low_text for kw in RESULT_KEYWORDS) or bool(re.search(r"\b\d{1,2}\s*:\s*\d{1,2}\b", low_text))
-            if img_urls and (looks_like_results or len(text_matches) == 0):
-                print(f"[VK] Пост #{idx} подходит под результаты, скачиваю фото ({len(img_urls)} шт.)...")
-                for img_u in img_urls[:3]:
+            looks_like_results = (
+                len(posts) == 1
+                or any(kw in low_text for kw in RESULT_KEYWORDS)
+                or bool(re.search(r"\b\d{1,2}\s*:\s*\d{1,2}\b", low_text))
+                or len(text_matches) == 0
+            )
+            if looks_like_results:
+                print(f"[VK] Пост #{idx}: скачиваю фото ({len(img_urls)} шт.) для Vision...")
+                for img_u in img_urls[:5]:
                     try:
                         img_resp = requests.get(img_u, headers=HEADERS, timeout=15)
                         img_resp.raise_for_status()
@@ -228,7 +275,6 @@ def parse_vk_group(url, league_name=None, count=15, scan_photos=True):
 
 
 def parse_tg_channel(url, league_name=None):
-    """Сканирует публичный Telegram-канал через веб-превью t.me/s/..."""
     u = url.strip()
     if not u.startswith("http"):
         u = "https://" + u
@@ -256,7 +302,6 @@ def parse_tg_channel(url, league_name=None):
                 seen_keys.add(key)
                 all_matches.append(m)
 
-        # Проверяем фото в посте ТГ, если текст похож на сводку результатов
         low_text = post_text.lower()
         if any(kw in low_text for kw in RESULT_KEYWORDS):
             for photo_a in msg.find_all("a", class_="tgme_widget_message_photo_wrap")[:2]:
@@ -278,17 +323,12 @@ def parse_tg_channel(url, league_name=None):
 
 
 def inspect_vk_wall(url, count=5):
-    """Диагностика первых постов стены ВК для проверки видимости текста и картинок."""
-    mobile_url = _normalize_vk_mobile_url(url)
-    resp = requests.get(mobile_url, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    posts = soup.find_all("div", class_=re.compile(r"wall_item|wi_body"))
-
-    lines = [f"Найдено блоков постов: <b>{len(posts)}</b>"]
-    for i, post in enumerate(posts[:count], start=1):
-        text_el = post.find("div", class_=re.compile(r"pi_text|wi_explain"))
-        txt = (text_el.get_text(" ", strip=True) if text_el else post.get_text(" ", strip=True))[:90]
-        imgs = _extract_vk_post_images(post)
+    if not VK_TOKEN:
+        return "⚠️ Не задан VK_TOKEN в .env"
+    posts, title = _fetch_vk_posts_via_api(url, count=count)
+    lines = [f"Группа: <b>{title or url}</b> | Найдено постов: <b>{len(posts)}</b>"]
+    for i, post in enumerate(posts, start=1):
+        txt = post.get("text", "").replace("\n", " ")[:90]
+        imgs = post.get("images", [])
         lines.append(f"{i}. Фото: {len(imgs)} шт. | «{txt}...»")
     return "\n".join(lines)
