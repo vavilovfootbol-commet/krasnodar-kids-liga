@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Krasnodar Kids Liga — Рейтинг детского футбола</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <!-- Шапка -->
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xl">⚽</div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-bold tracking-tight text-white">Krasnodar Kids Liga</h1>
+          <p class="text-xs text-slate-400">Единый рейтинг и статистика детского футбола Краснодара</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="updatedBadge" class="text-xs text-slate-400 hidden sm:inline">Загрузка...</span>
+        <button onclick="loadData(true)" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-emerald-400 border border-slate-700 transition">
+          ↻ Обновить
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Счётчики -->
+    <section class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div class="text-xs text-slate-400">Команд в базе</div>
+        <div id="statTeams" class="text-2xl font-bold text-white mt-1">—</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div class="text-xs text-slate-400">Сыграно матчей</div>
+        <div id="statMatches" class="text-2xl font-bold text-emerald-400 mt-1">—</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div class="text-xs text-slate-400">Анонсов в календаре</div>
+        <div id="statUpcoming" class="text-2xl font-bold text-amber-400 mt-1">—</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div class="text-xs text-slate-400">Турниров / Лиг</div>
+        <div id="statLeagues" class="text-2xl font-bold text-sky-400 mt-1">—</div>
+      </div>
+    </section>
+
+    <!-- Панель фильтров и вкладок -->
+    <section class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+      <div class="flex flex-wrap gap-2">
+        <button id="tabRatingBtn" onclick="switchTab('rating')" class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white transition">
+          🏆 Рейтинг ELO
+        </button>
+        <button id="tabMatchesBtn" onclick="switchTab('matches')" class="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          📅 Матчи и Календарь
+        </button>
+        <button id="tabH2HBtn" onclick="switchTab('h2h')" class="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          ⚔️ Сравнение (H2H)
+        </button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <select id="ageFilter" onchange="onFilterChange()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+          <option value="ALL">Все возрасты</option>
+        </select>
+        <select id="leagueFilter" onchange="renderAll()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 max-w-[220px]">
+          <option value="ALL">Все турниры</option>
+        </select>
+        <input id="searchInput" oninput="renderAll()" type="text" placeholder="Поиск команды..." class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-full sm:w-48" />
+      </div>
+    </section>
+
+    <!-- ВКЛАДКА 1: РЕЙТИНГ КОМАНД -->
+    <section id="ratingSection" class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 bg-slate-900/60 text-xs uppercase text-slate-400">
+              <th class="py-3.5 px-4 w-12">#</th>
+              <th class="py-3.5 px-4">Команда</th>
+              <th class="py-3.5 px-3 text-center">Год</th>
+              <th class="py-3.5 px-4 text-right">Рейтинг ELO</th>
+              <th class="py-3.5 px-3 text-center">И</th>
+              <th class="py-3.5 px-3 text-center text-emerald-400">В</th>
+              <th class="py-3.5 px-3 text-center text-slate-300">Н</th>
+              <th class="py-3.5 px-3 text-center text-rose-400">П</th>
+              <th class="py-3.5 px-4 text-right hidden sm:table-cell">Мячи</th>
+            </tr>
+          </thead>
+          <tbody id="teamsTableBody" class="divide-y divide-slate-800/70 text-sm">
+            <tr><td colspan="9" class="py-8 text-center text-slate-500">Загружаем таблицу рейтинга...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-3 bg-slate-900/50 border-t border-slate-800 text-xs text-slate-400">
+        💡 Нажми на любую команду в таблице, чтобы открыть график динамики ELO и историю матчей.
+      </div>
+    </section>
+
+    <!-- ВКЛАДКА 2: МАТЧИ И АНОНСЫ -->
+    <section id="matchesSection" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">⚽ Последние результаты</h2>
+        <div id="playedList" class="space-y-2"></div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <h2 class="text-base font-bold text-amber-400 flex items-center gap-2">📅 Календарь (Анонсы)</h2>
+        <div id="upcomingList" class="space-y-2"></div>
+      </div>
+    </section>
+
+    <!-- ВКЛАДКА 3: СРАВНЕНИЕ КОМАНД (H2H И ПРОГНОЗ ELO) -->
+    <section id="h2hSection" class="hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
+        <div class="grid grid-cols-1 md:grid-cols-11 gap-3 items-center">
+          <div class="md:col-span-5">
+            <label class="block text-xs text-slate-400 mb-1">Команда 1 (Хозяева)</label>
+            <select id="h2hTeamA" onchange="renderH2H()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"></select>
+          </div>
+          <div class="md:col-span-1 text-center font-bold text-slate-500 pt-4">VS</div>
+          <div class="md:col-span-5">
+            <label class="block text-xs text-slate-400 mb-1">Команда 2 (Гости)</label>
+            <select id="h2hTeamB" onchange="renderH2H()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"></select>
+          </div>
+        </div>
+
+        <div id="h2hResultArea" class="space-y-5"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- МОДАЛЬНОЕ ОКНО КАРТОЧКИ КОМАНДЫ -->
+  <div id="teamModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeModal(event)">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl" onclick="event.stopPropagation()">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <span id="modalAgeBadge" class="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 mb-1">2016</span>
+          <h3 id="modalTeamName" class="text-xl font-bold text-white">Название команды</h3>
+          <p id="modalTeamStats" class="text-xs text-slate-400 mt-1">Статистика</p>
+        </div>
+        <button onclick="hideModal()" class="text-slate-400 hover:text-white text-xl leading-none px-2">✕</button>
+      </div>
+
+      <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+        <canvas id="eloChart" height="140"></canvas>
+      </div>
+
+      <div>
+        <h4 class="text-xs font-semibold uppercase text-slate-400 mb-2">Матчи команды</h4>
+        <div id="modalMatchesList" class="max-h-48 overflow-y-auto space-y-1.5 pr-1 text-sm"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let PORTAL_DATA = null;
+    let chartInstance = null;
+
+    async function loadData(force = false) {
+      try {
+        const res = await fetch(`/api/data?refresh=${force}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        PORTAL_DATA = data;
+
+        document.getElementById("updatedBadge").textContent = `Обновлено в ${data.updated_at}`;
+        document.getElementById("statTeams").textContent = data.stats.teams_count;
+        document.getElementById("statMatches").textContent = data.stats.matches_count;
+        document.getElementById("statUpcoming").textContent = data.stats.upcoming_count;
+        document.getElementById("statLeagues").textContent = data.stats.leagues_count;
+
+        const ageSelect = document.getElementById("ageFilter");
+        const prevAge = ageSelect.value;
+        ageSelect.innerHTML = `<option value="ALL">Все возрасты</option>`;
+        data.ages.forEach(a => {
+          ageSelect.innerHTML += `<option value="${a}">${a} г.р.</option>`;
+        });
+        if ([...ageSelect.options].some(o => o.value === prevAge)) ageSelect.value = prevAge;
+
+        const leagueSelect = document.getElementById("leagueFilter");
+        const prevLeague = leagueSelect.value;
+        leagueSelect.innerHTML = `<option value="ALL">Все турниры</option>`;
+        data.leagues.forEach(l => {
+          leagueSelect.innerHTML += `<option value="${l.id}">${l.name}</option>`;
+        });
+        if ([...leagueSelect.options].some(o => o.value === prevLeague)) leagueSelect.value = prevLeague;
+
+        populateH2HSelectors();
+        renderAll();
+      } catch (err) {
+        document.getElementById("teamsTableBody").innerHTML =
+          `<tr><td colspan="9" class="py-8 text-center text-rose-400">Ошибка загрузки данных: ${err.message}</td></tr>`;
+      }
+    }
+
+    function onFilterChange() {
+      populateH2HSelectors();
+      renderAll();
+    }
+
+    function populateH2HSelectors() {
+      if (!PORTAL_DATA) return;
+      const ageVal = document.getElementById("ageFilter").value;
+      const teams = PORTAL_DATA.teams.filter(t => ageVal === "ALL" || t.age === ageVal);
+
+      const selA = document.getElementById("h2hTeamA");
+      const selB = document.getElementById("h2hTeamB");
+      const oldA = selA.value;
+      const oldB = selB.value;
+
+      const optionsHtml = teams.map(t => `<option value="${t.id}">${t.name} (${t.rating})</option>`).join("");
+      selA.innerHTML = optionsHtml;
+      selB.innerHTML = optionsHtml;
+
+      if (teams.some(t => t.id === oldA)) selA.value = oldA;
+      if (teams.some(t => t.id === oldB)) selB.value = oldB;
+      else if (teams.length > 1) selB.selectedIndex = 1;
+    }
+
+    function switchTab(tab) {
+      const sections = {
+        rating: document.getElementById("ratingSection"),
+        matches: document.getElementById("matchesSection"),
+        h2h: document.getElementById("h2hSection")
+      };
+      const buttons = {
+        rating: document.getElementById("tabRatingBtn"),
+        matches: document.getElementById("tabMatchesBtn"),
+        h2h: document.getElementById("tabH2HBtn")
+      };
+
+      Object.keys(sections).forEach(key => {
+        if (key === tab) {
+          sections[key].classList.remove("hidden");
+          buttons[key].className = "px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white transition";
+        } else {
+          sections[key].classList.add("hidden");
+          buttons[key].className = "px-4 py-2 rounded-lg text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+        }
+      });
+
+      if (tab === "h2h") renderH2H();
+    }
+
+    function renderAll() {
+      if (!PORTAL_DATA) return;
+      const ageVal = document.getElementById("ageFilter").value;
+      const leagueVal = document.getElementById("leagueFilter").value;
+      const q = document.getElementById("searchInput").value.trim().toLowerCase();
+
+      // Если выбран конкретный турнир, собираем ID команд, участвующих в этом турнире
+      let teamsInLeague = null;
+      if (leagueVal !== "ALL") {
+        teamsInLeague = new Set();
+        PORTAL_DATA.played_matches.concat(PORTAL_DATA.upcoming_matches).forEach(m => {
+          if (m.league_id === leagueVal) {
+            teamsInLeague.add(m.home_id);
+            teamsInLeague.add(m.away_id);
+          }
+        });
+      }
+
+      // 1. Таблица рейтинга
+      const filteredTeams = PORTAL_DATA.teams.filter(t => {
+        const matchAge = (ageVal === "ALL" || t.age === ageVal);
+        const matchLeague = (!teamsInLeague || teamsInLeague.has(t.id));
+        const matchQuery = (!q || t.name.toLowerCase().includes(q) || t.school.toLowerCase().includes(q));
+        return matchAge && matchLeague && matchQuery;
+      });
+
+      const tbody = document.getElementById("teamsTableBody");
+      if (!filteredTeams.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-slate-500">Команды по заданному фильтру не найдены</td></tr>`;
+      } else {
+        tbody.innerHTML = filteredTeams.map((t, idx) => {
+          const rankBadge = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : (idx + 1);
+          return `
+            <tr onclick="openTeamModal('${t.id}')" class="hover:bg-slate-800/70 cursor-pointer transition">
+              <td class="py-3 px-4 font-bold text-slate-400">${rankBadge}</td>
+              <td class="py-3 px-4 font-semibold text-white">${t.name}</td>
+              <td class="py-3 px-3 text-center"><span class="px-2 py-0.5 rounded bg-slate-800 text-xs text-slate-300">${t.age}</span></td>
+              <td class="py-3 px-4 text-right font-bold text-emerald-400">${t.rating}</td>
+              <td class="py-3 px-3 text-center text-slate-300">${t.games}</td>
+              <td class="py-3 px-3 text-center text-emerald-400">${t.wins}</td>
+              <td class="py-3 px-3 text-center text-slate-400">${t.draws}</td>
+              <td class="py-3 px-3 text-center text-rose-400">${t.losses}</td>
+              <td class="py-3 px-4 text-right text-slate-400 hidden sm:table-cell">${t.gf}:${t.ga}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      // 2. Сыгранные матчи
+      const filteredPlayed = PORTAL_DATA.played_matches.filter(m => {
+        const matchAge = (ageVal === "ALL" || m.league_age === ageVal);
+        const matchLeague = (leagueVal === "ALL" || m.league_id === leagueVal);
+        const matchQuery = (!q || m.home_name.toLowerCase().includes(q) || m.away_name.toLowerCase().includes(q));
+        return matchAge && matchLeague && matchQuery;
+      });
+
+      document.getElementById("playedList").innerHTML = filteredPlayed.length
+        ? filteredPlayed.map(m => `
+          <div class="bg-slate-950/60 border border-slate-800/80 rounded-lg px-3 py-2.5 flex items-center justify-between gap-2 text-sm">
+            <div class="flex-1 text-right font-medium text-slate-200 truncate">${m.home_name}</div>
+            <div class="px-2.5 py-1 rounded bg-slate-800 font-bold text-emerald-400 shrink-0">${m.sh} : ${m.sg}</div>
+            <div class="flex-1 text-left font-medium text-slate-200 truncate">${m.away_name}</div>
+            <div class="text-xs text-slate-500 hidden sm:block shrink-0">${m.date}</div>
+          </div>
+        `).join("")
+        : `<p class="text-sm text-slate-500">Нет сыгранных матчей по выбранному фильтру.</p>`;
+
+      // 3. Анонсы
+      const filteredUpcoming = PORTAL_DATA.upcoming_matches.filter(m => {
+        const matchAge = (ageVal === "ALL" || m.league_age === ageVal);
+        const matchLeague = (leagueVal === "ALL" || m.league_id === leagueVal);
+        const matchQuery = (!q || m.home_name.toLowerCase().includes(q) || m.away_name.toLowerCase().includes(q));
+        return matchAge && matchLeague && matchQuery;
+      });
+
+      document.getElementById("upcomingList").innerHTML = filteredUpcoming.length
+        ? filteredUpcoming.map(m => `
+          <div class="bg-slate-950/60 border border-amber-500/20 rounded-lg p-3 text-sm space-y-1">
+            <div class="flex justify-between text-xs text-amber-400 font-medium">
+              <span>${m.date}</span>
+              <span>${m.league_name}</span>
+            </div>
+            <div class="font-semibold text-white">${m.home_name} — ${m.away_name}</div>
+          </div>
+        `).join("")
+        : `<p class="text-sm text-slate-500">Ближайших анонсов пока нет.</p>`;
+
+      renderH2H();
+    }
+
+    function renderH2H() {
+      if (!PORTAL_DATA) return;
+      const idA = document.getElementById("h2hTeamA").value;
+      const idB = document.getElementById("h2hTeamB").value;
+      const area = document.getElementById("h2hResultArea");
+
+      const tA = PORTAL_DATA.teams.find(t => t.id === idA);
+      const tB = PORTAL_DATA.teams.find(t => t.id === idB);
+      if (!tA || !tB || idA === idB) {
+        area.innerHTML = `<p class="text-sm text-slate-400 text-center py-4">Выбери две разные команды для расчёта вероятностей и сравнения.</p>`;
+        return;
+      }
+
+      // Расчёт ожидаемого результата ELO с поправкой на ничью (~14% в детском футболе)
+      const expA = 1 / (1 + Math.pow(10, (tB.rating - tA.rating) / 400));
+      const drawBase = 0.14 * (1 - Math.abs(expA - 0.5) * 1.4);
+      const pDraw = Math.max(4, Math.round(drawBase * 100));
+      const rem = 100 - pDraw;
+      const pWinA = Math.round(expA * rem);
+      const pWinB = Math.max(1, 100 - pDraw - pWinA);
+
+      const avgGoalsA = tA.games ? (tA.gf / tA.games).toFixed(1) : "0.0";
+      const avgGoalsB = tB.games ? (tB.gf / tB.games).toFixed(1) : "0.0";
+      const winRateA = tA.games ? Math.round((tA.wins / tA.games) * 100) : 0;
+      const winRateB = tB.games ? Math.round((tB.wins / tB.games) * 100) : 0;
+
+      // Личные встречи
+      const directMatches = PORTAL_DATA.played_matches.filter(
+        m => (m.home_id === idA && m.away_id === idB) || (m.home_id === idB && m.away_id === idA)
+      );
+
+      area.innerHTML = `
+        <!-- Прогноз вероятностей ELO -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div class="flex justify-between items-center text-xs text-slate-400">
+            <span>Прогноз модели ELO</span>
+            <span>Разница рейтинга: <strong class="text-white">${tA.rating - tB.rating > 0 ? '+' : ''}${tA.rating - tB.rating}</strong></span>
+          </div>
+          <div class="flex justify-between text-sm font-bold">
+            <span class="text-emerald-400">П1: ${pWinA}%</span>
+            <span class="text-slate-300">Ничья: ${pDraw}%</span>
+            <span class="text-sky-400">П2: ${pWinB}%</span>
+          </div>
+          <div class="w-full h-3 rounded-full overflow-hidden flex bg-slate-800">
+            <div style="width: ${pWinA}%" class="bg-emerald-500"></div>
+            <div style="width: ${pDraw}%" class="bg-slate-500"></div>
+            <div style="width: ${pWinB}%" class="bg-sky-500"></div>
+          </div>
+        </div>
+
+        <!-- Сравнение метрик -->
+        <div class="grid grid-cols-3 gap-2 text-center bg-slate-950/50 border border-slate-800 rounded-xl p-4 text-sm">
+          <div class="font-bold text-emerald-400 text-lg">${tA.rating}</div>
+          <div class="text-xs text-slate-400 self-center">Рейтинг ELO</div>
+          <div class="font-bold text-sky-400 text-lg">${tB.rating}</div>
+
+          <div class="font-semibold text-white">${winRateA}%</div>
+          <div class="text-xs text-slate-400 self-center">Процент побед</div>
+          <div class="font-semibold text-white">${winRateB}%</div>
+
+          <div class="font-semibold text-white">${avgGoalsA}</div>
+          <div class="text-xs text-slate-400 self-center">Голов за игру</div>
+          <div class="font-semibold text-white">${avgGoalsB}</div>
+
+          <div class="font-semibold text-slate-300">${tA.gf} : ${tA.ga}</div>
+          <div class="text-xs text-slate-400 self-center">Забито / Пропущено</div>
+          <div class="font-semibold text-slate-300">${tB.gf} : ${tB.ga}</div>
+        </div>
+
+        <!-- История очных встреч -->
+        <div class="space-y-2">
+          <h3 class="text-xs font-semibold uppercase text-slate-400">Очные встречи в базе (${directMatches.length})</h3>
+          ${directMatches.length
+            ? directMatches.map(m => `
+              <div class="bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2 flex items-center justify-between text-sm">
+                <span class="text-xs text-slate-500 w-24">${m.date}</span>
+                <span class="flex-1 text-right pr-2 font-medium text-white">${m.home_name}</span>
+                <span class="px-2.5 py-0.5 rounded bg-slate-800 font-bold text-emerald-400">${m.sh} : ${m.sg}</span>
+                <span class="flex-1 text-left pl-2 font-medium text-white">${m.away_name}</span>
+              </div>
+            `).join("")
+            : `<p class="text-sm text-slate-500">Эти команды ещё не встречались в записанных турнирах.</p>`
+          }
+        </div>
+      `;
+    }
+
+    function openTeamModal(tid) {
+      const team = PORTAL_DATA.teams.find(t => t.id === tid);
+      if (!team) return;
+
+      document.getElementById("modalAgeBadge").textContent = `${team.age} г.р.`;
+      document.getElementById("modalTeamName").textContent = team.name;
+      document.getElementById("modalTeamStats").textContent =
+        `Рейтинг ELO: ${team.rating} • Игр: ${team.games} (В:${team.wins} Н:${team.draws} П:${team.losses}) • Разница мячей: ${team.gf}:${team.ga}`;
+
+      const hist = PORTAL_DATA.history_by_team[tid] || [{ date: "Старт", rating: 1000 }];
+      const ctx = document.getElementById("eloChart").getContext("2d");
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: hist.map((h, i) => i === 0 ? "Старт" : `${h.date}`),
+          datasets: [{
+            label: "Рейтинг ELO",
+            data: hist.map(h => h.rating),
+            borderColor: "#10b981",
+            backgroundColor: "rgba(16, 185, 129, 0.15)",
+            borderWidth: 2.5,
+            tension: 0.25,
+            fill: true,
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "#1e293b" } },
+            y: { ticks: { color: "#94a3b8", font: { size: 11 } }, grid: { color: "#1e293b" } }
+          }
+        }
+      });
+
+      const teamMatches = PORTAL_DATA.played_matches.filter(m => m.home_id === tid || m.away_id === tid);
+      document.getElementById("modalMatchesList").innerHTML = teamMatches.length
+        ? teamMatches.map(m => `
+          <div class="flex items-center justify-between bg-slate-950/70 px-3 py-2 rounded-lg border border-slate-800/70">
+            <span class="text-xs text-slate-500 w-24">${m.date}</span>
+            <span class="flex-1 text-right pr-2 ${m.home_id === tid ? 'font-bold text-white' : 'text-slate-300'}">${m.home_name}</span>
+            <span class="px-2 py-0.5 rounded bg-slate-800 font-bold text-emerald-400 text-xs">${m.sh}:${m.sg}</span>
+            <span class="flex-1 text-left pl-2 ${m.away_id === tid ? 'font-bold text-white' : 'text-slate-300'}">${m.away_name}</span>
+          </div>
+        `).join("")
+        : `<p class="text-xs text-slate-500">История матчей пока пуста.</p>`;
+
+      const modal = document.getElementById("teamModal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    }
+
+    function hideModal() {
+      const modal = document.getElementById("teamModal");
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+
+    function closeModal(e) {
+      if (e.target.id === "teamModal") hideModal();
+    }
+
+    loadData(false);
+  </script>
+</body>
+</html>
