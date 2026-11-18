@@ -2,9 +2,7 @@
 
 on:
   schedule:
-    # апуск 2 раза в день: в 12:00 и в 21:00 по оскве (09:00 и 18:00 UTC)
     - cron: '0 9,18 * * *'
-  # нопка для ручного запуска в любое время прямо с сайта GitHub
   workflow_dispatch:
 
 jobs:
@@ -31,8 +29,9 @@ jobs:
           ENV_FILE: ${{ secrets.ENV_FILE }}
           CREDENTIALS_JSON: ${{ secrets.CREDENTIALS_JSON }}
         run: |
-          echo "$ENV_FILE" > .env
-          echo "$CREDENTIALS_JSON" > credentials.json
+          printf '%s\n' "$ENV_FILE" > .env
+          printf '%s\n' "$CREDENTIALS_JSON" > credentials.json
+          python -c "import json; json.load(open('credentials.json')); print('credentials.json OK')"
 
       - name: апустить сканирование лиг и Vision-распознавание
         run: python auto_sync.py
