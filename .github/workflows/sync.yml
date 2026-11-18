@@ -1,0 +1,38 @@
+﻿name: Auto Sync Football Leagues
+
+on:
+  schedule:
+    # апуск 2 раза в день: в 12:00 и в 21:00 по оскве (09:00 и 18:00 UTC)
+    - cron: '0 9,18 * * *'
+  # нопка для ручного запуска в любое время прямо с сайта GitHub
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Скачать код из репозитория
+        uses: actions/checkout@v4
+
+      - name: становить Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: становить зависимости
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: осстановить секретные ключи (.env и credentials.json)
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+          CREDENTIALS_JSON: ${{ secrets.CREDENTIALS_JSON }}
+        run: |
+          echo "$ENV_FILE" > .env
+          echo "$CREDENTIALS_JSON" > credentials.json
+
+      - name: апустить сканирование лиг и Vision-распознавание
+        run: python auto_sync.py
